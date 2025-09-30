@@ -162,13 +162,21 @@ func (r *openshiftSNCRequest) deploy(ctx *pulumi.Context) error {
 		return err
 	}
 	// Get AMI
-	ami, err := amiSVC.GetAMIByName(ctx,
-		fmt.Sprintf("%s*", amiName(r.version, r.arch)),
-		[]string{"self", amiOwner},
-		map[string]string{
-			"architecture": *r.arch})
-	if err != nil {
-		return err
+	amiID := os.Getenv("CUSTOM_AMI_ID")
+	if amiID == "" {
+		logging.Info("CUSTOM_AMI_ID not set, searching for the right AMI in AWS ...")
+		ami, err := amiSVC.GetAMIByName(ctx,
+			fmt.Sprintf("%s*", amiName(r.version, r.arch)),
+			[]string{"self", amiOwner},
+			map[string]string{
+				"architecture": *r.arch})
+		if err != nil {
+			return err
+		}
+	}
+	logging.Infof("Using AMI %s", amiID)
+	ami := &ec2.LookupAmiResult{
+		Id: amiID, // Your custom AMI ID
 	}
 	nw, err := network.Create(ctx, r.mCtx,
 		&network.NetworkArgs{

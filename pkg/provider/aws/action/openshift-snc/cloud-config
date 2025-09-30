@@ -1,18 +1,27 @@
 #cloud-config
 bootcmd:
+  - echo "cloud-init running bootcmd"
+  - set -x
   # Resize the partition (4 = /dev/nvme0n1p4 typically)
-  - growpart /dev/nvme0n1 4
-  # Resize the XFS filesystem on /sysroot
-  - xfs_growfs /sysroot
+  - growpart /dev/nvme0n1 4 >> /etc/cloud-init-order.txt
+  - mkdir -p /home/core/.kube/
+  - chown core /home/core/.kube/
+  - ln -sf /opt/kubeconfig /home/core/.kube/config
+  - chown core /home/core/.kube/config
+  - echo -e "CRC_SELF_SUFFICIENT=1\nCRC_NETWORK_MODE_USER=0" > /etc/sysconfig/crc-env
+  - chmod 644 /etc/sysconfig/crc-env
 runcmd:
-  - systemctl enable --now kubelet
-  - export PS=$(podman run --rm docker.io/amazon/aws-cli ssm get-parameter --name "{{ .SSMPullSecretName }}" --with-decryption --query "Parameter.Value" --output text)
+  - echo "cloud-init running runcmd"
+  - set -x
+  - AWS_CLI_IMG=docker.io/amazon/aws-cli
+  - time podman pull "$AWS_CLI_IMG"
+  - export PS=$(podman run --rm "$AWS_CLI_IMG" ssm get-parameter --name "{{ .SSMPullSecretName }}" --with-decryption --query "Parameter.Value" --output text)
   - echo ${PS} > /opt/crc/pull-secret
   - chmod 0644 /opt/crc/pull-secret
-  - export KP=$(podman run --rm docker.io/amazon/aws-cli ssm get-parameter --name "{{ .SSMKubeAdminPasswordName }}" --with-decryption --query "Parameter.Value" --output text)
+  - export KP=$(podman run --rm "$AWS_CLI_IMG" ssm get-parameter --name "{{ .SSMKubeAdminPasswordName }}" --with-decryption --query "Parameter.Value" --output text)
   - echo ${KP} > /opt/crc/pass_kubeadmin
   - chmod 0644 /opt/crc/pass_kubeadmin
-  - export DV=$(podman run --rm docker.io/amazon/aws-cli ssm get-parameter --name "{{ .SSMDeveloperPasswordName }}" --with-decryption --query "Parameter.Value" --output text)
+  - export DV=$(podman run --rm "$AWS_CLI_IMG" ssm get-parameter --name "{{ .SSMDeveloperPasswordName }}" --with-decryption --query "Parameter.Value" --output text)
   - echo ${DV} > /opt/crc/pass_developer
   - chmod 0644 /opt/crc/pass_developer
   - echo "{{ .PublicIP }}" > /opt/crc/eip
@@ -25,10 +34,4 @@ write_files:
 - path: /opt/crc/id_rsa.pub
   content: {{ .PubKey }}
   owner: root:root
-  permissions: '0644'
-- content: |
-      CRC_SELF_SUFFICIENT=1
-      CRC_NETWORK_MODE_USER=0
-  owner: root:root
-  path: /etc/sysconfig/crc-env
   permissions: '0644'
